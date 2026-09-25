@@ -1,4 +1,4 @@
-# TailorFit Pro — Clothing Measurement & Uniform Management System
+# TailorFit Pro — Clothing Measurement & Uniform Management System.
 
 A full-stack enterprise web application for uniform businesses managing organizations, branches, staff, garment types, dynamic measurement templates, versioned fitting history, and order production workflows.
 
