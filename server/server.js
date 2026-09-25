@@ -21,6 +21,7 @@ import orderRoutes from './routes/orderRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
 
 dotenv.config();
+dotenv.config({ path: '../.env' });
 
 const app = express();
 

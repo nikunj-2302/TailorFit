@@ -13,9 +13,11 @@ import Order from '../models/Order.js';
 import AuditLog from '../models/AuditLog.js';
 
 dotenv.config();
+dotenv.config({ path: '../.env' });
 
 export const seedDatabase = async () => {
   try {
+    await connectDB();
     console.log('--- Starting Database Seeding ---');
 
     // Clear existing data

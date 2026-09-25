@@ -1,5 +1,4 @@
 import mongoose from 'mongoose';
-import { MongoMemoryServer } from 'mongodb-memory-server';
 
 let cachedConnection = global.mongooseConnection || null;
 let mongod = null;
@@ -38,6 +37,7 @@ export const connectDB = async () => {
 
     // 3. Fallback to MongoMemoryServer for instant zero-setup local development
     if (!mongod) {
+      const { MongoMemoryServer } = await import('mongodb-memory-server');
       mongod = await MongoMemoryServer.create({
         instance: {
           dbName: 'uniform_measurement_db'
@@ -51,10 +51,10 @@ export const connectDB = async () => {
     return cachedConnection;
   } catch (error) {
     console.error('MongoDB connection error:', error.message);
-    // Don't exit process in serverless
-    if (process.env.NODE_ENV !== 'production') {
+    if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
       process.exit(1);
     }
+    throw error;
   }
 };
 
