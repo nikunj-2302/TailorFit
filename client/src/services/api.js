@@ -1,11 +1,25 @@
 import axios from 'axios';
 
+const resolveBaseUrl = () => {
+  const envUrl = import.meta.env.VITE_API_BASE_URL;
+  // In production (Vercel deployment), never use localhost; use same-origin /api or configured remote endpoint
+  if (import.meta.env.PROD) {
+    if (!envUrl || envUrl.includes('localhost') || envUrl.includes('127.0.0.1')) {
+      return '/api';
+    }
+    return envUrl;
+  }
+  // In local dev, /api is proxied by Vite to port 5000
+  return envUrl || '/api';
+};
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  baseURL: resolveBaseUrl(),
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
 
 // Request interceptor: Attach JWT token
 api.interceptors.request.use(

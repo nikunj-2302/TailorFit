@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
+import mongoose from 'mongoose';
 import { connectDB } from './config/db.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { seedDatabase } from './seed/seed.js';
@@ -31,14 +32,34 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+app.options('*', cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
+
+// Auto-seed helper for brand-new databases
+let isSeededChecked = false;
+const checkAndSeedIfNeeded = async () => {
+  if (isSeededChecked) return;
+  try {
+    const userCount = await User.countDocuments();
+    if (userCount === 0) {
+      console.log('No users found in database. Auto-seeding initial demo data...');
+      await seedDatabase();
+    }
+    isSeededChecked = true;
+  } catch (seedErr) {
+    console.error('Auto-seed check encountered an issue:', seedErr.message);
+  }
+};
 
 // Ensure DB is connected for serverless invocations
 app.use(async (req, res, next) => {
   try {
     await connectDB();
+    if (!isSeededChecked) {
+      await checkAndSeedIfNeeded();
+    }
     next();
   } catch (err) {
     next(err);
@@ -46,10 +67,13 @@ app.use(async (req, res, next) => {
 });
 
 // Health check
-app.get('/api/health', (req, res) => {
+app.get(['/api', '/api/health'], (req, res) => {
+  const dbState = mongoose.connection.readyState;
+  const dbStatusMap = { 0: 'disconnected', 1: 'connected', 2: 'connecting', 3: 'disconnecting' };
   res.status(200).json({
     status: 'online',
-    message: 'Clothing Measurement & Uniform Management API is running',
+    database: dbStatusMap[dbState] || 'unknown',
+    message: 'TailorFit Pro Clothing Measurement & Uniform Management API is running',
     timestamp: new Date().toISOString(),
   });
 });
@@ -58,6 +82,7 @@ app.get('/api/health', (req, res) => {
 app.post('/api/seed', async (req, res, next) => {
   try {
     await seedDatabase();
+    isSeededChecked = true;
     res.status(200).json({
       success: true,
       message: 'Database seeded successfully with demo data.',
@@ -90,16 +115,10 @@ if (!process.env.VERCEL) {
   const startServer = async () => {
     try {
       await connectDB();
-
-      // Auto-seed if database is brand new and empty
-      const userCount = await User.countDocuments();
-      if (userCount === 0) {
-        console.log('No users found in database. Auto-seeding initial demo data...');
-        await seedDatabase();
-      }
+      await checkAndSeedIfNeeded();
 
       app.listen(PORT, () => {
-        console.log(`🚀 Uniform Management Server running on port ${PORT}`);
+        console.log(`🚀 TailorFit Pro Server running on port ${PORT}`);
         console.log(`API Health: http://localhost:${PORT}/api/health`);
       });
     } catch (err) {
@@ -111,3 +130,4 @@ if (!process.env.VERCEL) {
 }
 
 export default app;
+

@@ -4,11 +4,16 @@
   "type": "module",
   "private": true,
   "description": "TailorFit Pro - Clothing Measurement & Uniform Management System",
+  "workspaces": [
+    "client",
+    "server"
+  ],
   "scripts": {
     "dev:server": "npm run dev --prefix server",
     "dev:client": "npm run dev --prefix client",
     "build:client": "npm run build --prefix client",
     "build": "npm run build --prefix client",
+    "vercel-build": "npm run build --prefix client",
     "seed": "npm run seed --prefix server"
   },
   "dependencies": {

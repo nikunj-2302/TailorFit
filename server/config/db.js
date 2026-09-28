@@ -1,56 +1,83 @@
 import mongoose from 'mongoose';
 
-let cachedConnection = global.mongooseConnection || null;
+/**
+ * Global is used here to maintain a cached connection across hot reloads
+ * in development and serverless invocations in production (e.g. Vercel).
+ */
+let cached = global.mongoose;
+
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
+
 let mongod = null;
 
 export const connectDB = async () => {
   // If connection is already open/active (crucial for Vercel serverless reuse)
-  if (cachedConnection && mongoose.connection.readyState >= 1) {
-    return cachedConnection;
+  if (cached.conn && mongoose.connection.readyState >= 1) {
+    return cached.conn;
   }
 
-  try {
-    const uri = process.env.MONGODB_URI;
+  const uri = process.env.MONGODB_URI;
+
+  if (!cached.promise) {
+    const opts = {
+      bufferCommands: false,
+      serverSelectionTimeoutMS: 8000,
+      maxPoolSize: 10,
+    };
 
     // 1. If a custom URI is provided (e.g., Atlas remote cluster)
     if (uri && !uri.includes('127.0.0.1') && !uri.includes('localhost')) {
-      console.log('Connecting to MongoDB via URI...');
-      cachedConnection = await mongoose.connect(uri, {
-        bufferCommands: false,
+      console.log('Connecting to MongoDB Atlas remote cluster...');
+      cached.promise = mongoose.connect(uri, opts).then((mongooseInstance) => {
+        console.log('MongoDB connected successfully to remote cluster.');
+        return mongooseInstance;
       });
-      global.mongooseConnection = cachedConnection;
-      console.log('MongoDB connected successfully to remote cluster.');
-      return cachedConnection;
-    }
-
-    // 2. Attempt direct local connection if URI is local
-    try {
-      if (uri) {
-        cachedConnection = await mongoose.connect(uri, { serverSelectionTimeoutMS: 2000 });
-        global.mongooseConnection = cachedConnection;
-        console.log('MongoDB connected successfully to local instance.');
-        return cachedConnection;
+    } else if (uri) {
+      // 2. Local MongoDB URI
+      console.log('Connecting to local MongoDB instance...');
+      cached.promise = mongoose.connect(uri, { ...opts, serverSelectionTimeoutMS: 2000 })
+        .then((m) => {
+          console.log('MongoDB connected successfully to local instance.');
+          return m;
+        })
+        .catch(async () => {
+          console.log('Local MongoDB not reachable, starting embedded in-memory MongoDB...');
+          const { MongoMemoryServer } = await import('mongodb-memory-server');
+          if (!mongod) {
+            mongod = await MongoMemoryServer.create({
+              instance: { dbName: 'uniform_measurement_db' },
+            });
+          }
+          return mongoose.connect(mongod.getUri(), opts);
+        });
+    } else {
+      // 3. No URI provided
+      if (process.env.VERCEL) {
+        throw new Error('MONGODB_URI environment variable is missing on Vercel. Please set MONGODB_URI in your Vercel Project Settings.');
       }
-    } catch (localErr) {
-      console.log('Local MongoDB not reachable, starting embedded in-memory MongoDB for zero-config development...');
-    }
-
-    // 3. Fallback to MongoMemoryServer for instant zero-setup local development
-    if (!mongod) {
+      console.log('No MONGODB_URI provided, starting embedded in-memory MongoDB for local development...');
       const { MongoMemoryServer } = await import('mongodb-memory-server');
-      mongod = await MongoMemoryServer.create({
-        instance: {
-          dbName: 'uniform_measurement_db'
-        }
-      });
+      if (!mongod) {
+        mongod = await MongoMemoryServer.create({
+          instance: { dbName: 'uniform_measurement_db' },
+        });
+      }
+      cached.promise = mongoose.connect(mongod.getUri(), opts);
     }
-    const memoryUri = mongod.getUri();
-    cachedConnection = await mongoose.connect(memoryUri);
-    global.mongooseConnection = cachedConnection;
-    console.log(`Connected to Embedded MongoDB Memory Server at ${memoryUri}`);
-    return cachedConnection;
+  }
+
+  try {
+    cached.conn = await cached.promise;
+    return cached.conn;
   } catch (error) {
+    cached.promise = null;
     console.error('MongoDB connection error:', error.message);
+    if (error.name === 'MongooseServerSelectionError' || error.message?.includes('whitelist') || error.message?.includes('SSL')) {
+      console.error('\n⚠️  [MongoDB Atlas Connection Error] IP not whitelisted.');
+      console.error('👉 Ensure 0.0.0.0/0 (Allow Access from Anywhere) is added to your MongoDB Atlas Network Access list for Vercel deployments.\n');
+    }
     if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
       process.exit(1);
     }
@@ -64,7 +91,10 @@ export const disconnectDB = async () => {
     if (mongod) {
       await mongod.stop();
     }
+    cached.conn = null;
+    cached.promise = null;
   } catch (error) {
     console.error('Error disconnecting from database:', error.message);
   }
 };
+
